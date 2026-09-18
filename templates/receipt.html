@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Token No. {{ token }}{% endblock %}
+{% block body %}
+<section class="card">
+  <div class="card-body">
+    <div class="badge">
+      <span class="no-label">Token</span>
+      <span class="no-value">{{ token }}</span>
+    </div>
+    <p class="receipt-title">You're registered!</p>
+    <div class="receipt-rows">
+      <div class="receipt-row"><span class="k">Name</span><span class="v">{{ name }}</span></div>
+      <div class="receipt-row"><span class="k">Phone</span><span class="v">{{ phone }}</span></div>
+      <div class="receipt-row"><span class="k">Date / time</span><span class="v">{{ timestamp }}</span></div>
+    </div>
+    <img class="receipt-image" src="{{ url_for('receipt_image', token_no=token) }}" alt="Token receipt">
+    <a class="primary" href="{{ url_for('receipt_image', token_no=token) }}" download="token-{{ token }}-receipt.png">Download receipt image</a>
+    <a class="secondary" href="{{ url_for('index') }}">Register another person</a>
+  </div>
+</section>
+{% endblock %}
