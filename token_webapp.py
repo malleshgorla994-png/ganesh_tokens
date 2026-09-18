@@ -95,6 +95,15 @@ def admin():
     return render_template("admin.html", tokens=tokens, org_name=ORG_NAME, next_token=next_token)
 
 
+@app.route("/admin/delete/<int:token_no>", methods=["POST"])
+def delete_token(token_no):
+    """Delete a single token record from the database."""
+    with jj._db_conn() as conn:
+        conn.execute("DELETE FROM tokens WHERE token_no = ?", (token_no,))
+        conn.commit()
+    return redirect(url_for("admin"))
+
+
 
 @app.route("/receipt-image/<int:token_no>.png")
 def receipt_image(token_no):

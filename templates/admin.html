@@ -45,6 +45,12 @@
             padding: 3px 10px; border-radius: 20px;
             font-weight: 700; font-size: 0.85rem; display: inline-block;
         }
+        .del-btn {
+            background: #e74c3c; color: white; border: none;
+            padding: 5px 12px; border-radius: 6px; cursor: pointer;
+            font-size: 0.8rem;
+        }
+        .del-btn:hover { background: #c0392b; }
         .empty { text-align: center; padding: 50px; color: #aaa; }
         .refresh-btn {
             background: #7a1414; color: white; border: none;
@@ -83,6 +89,7 @@
                         <th>Name</th>
                         <th>Phone</th>
                         <th>Date / Time</th>
+                        <th>Action</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -92,6 +99,11 @@
                         <td>{{ t.name }}</td>
                         <td>{{ t.phone }}</td>
                         <td>{{ t.timestamp }}</td>
+                        <td>
+                            <form method="POST" action="/admin/delete/{{ t.token }}" onsubmit="return confirm('Delete token #{{ t.token }} for {{ t.name }}?')">
+                                <button class="del-btn" type="submit">🗑 Delete</button>
+                            </form>
+                        </td>
                     </tr>
                     {% endfor %}
                 </tbody>
