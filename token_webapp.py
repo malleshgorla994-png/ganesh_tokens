@@ -50,8 +50,7 @@ def submit():
         ), 400
 
     with _submit_lock:
-        token_no = jj.get_next_token_number()
-        timestamp = jj.save_token(token_no, name, phone)   # now returns timestamp
+        token_no, timestamp = jj.save_token(name, phone)   # DB assigns token_no atomically
         # Try to also save image to disk (works locally; silently skipped on cloud)
         try:
             image_path = os.path.join(jj.SAVE_DIR, f"receipt_{token_no}.png")

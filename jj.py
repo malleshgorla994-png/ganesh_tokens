@@ -49,11 +49,14 @@ def _db_conn():
 
 
 def init_db():
-    """Create the tokens table if it doesn't exist yet. Call once at startup."""
+    """Create the tokens table if it doesn't exist yet. Call once at startup.
+    Uses AUTOINCREMENT so the DB assigns token numbers atomically — safe for
+    concurrent requests even across multiple server processes.
+    """
     with _db_conn() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS tokens (
-                token_no  INTEGER PRIMARY KEY,
+                token_no  INTEGER PRIMARY KEY AUTOINCREMENT,
                 name      TEXT    NOT NULL,
                 phone     TEXT    NOT NULL,
                 timestamp TEXT    NOT NULL
@@ -63,23 +66,26 @@ def init_db():
 
 
 def get_next_token_number():
-    """Returns the next sequential token number (MAX existing + 1, or 1)."""
+    """Returns what the next token number will be (for display only)."""
     with _db_conn() as conn:
         row = conn.execute("SELECT MAX(token_no) FROM tokens").fetchone()
         max_no = row[0]
         return 1 if max_no is None else int(max_no) + 1
 
 
-def save_token(token_no, name, phone):
-    """Insert a new token record and return the timestamp string used."""
+def save_token(name, phone):
+    """Insert a new token — DB assigns the token_no atomically via AUTOINCREMENT.
+    Returns (token_no, timestamp) so the caller knows the assigned number.
+    Safe for concurrent requests: no race condition possible."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with _db_conn() as conn:
-        conn.execute(
-            "INSERT INTO tokens (token_no, name, phone, timestamp) VALUES (?, ?, ?, ?)",
-            (token_no, name, phone, timestamp),
+        cursor = conn.execute(
+            "INSERT INTO tokens (name, phone, timestamp) VALUES (?, ?, ?)",
+            (name, phone, timestamp),
         )
+        token_no = cursor.lastrowid   # DB-assigned, guaranteed unique
         conn.commit()
-    return timestamp
+    return token_no, timestamp
 
 
 def lookup_token(token_no):
