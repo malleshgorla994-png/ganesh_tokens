@@ -56,12 +56,18 @@ def init_db():
     with _db_conn() as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS tokens (
-                token_no  INTEGER PRIMARY KEY AUTOINCREMENT,
-                name      TEXT    NOT NULL,
-                phone     TEXT    NOT NULL,
-                timestamp TEXT    NOT NULL
+                token_no    INTEGER PRIMARY KEY AUTOINCREMENT,
+                name        TEXT    NOT NULL,
+                phone       TEXT    NOT NULL,
+                timestamp   TEXT    NOT NULL,
+                created_by  TEXT    NOT NULL DEFAULT ''
             )
         """)
+        # Migrate existing DBs that don't have the created_by column yet
+        try:
+            conn.execute("ALTER TABLE tokens ADD COLUMN created_by TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass  # column already exists — that's fine
         conn.commit()
 
 
@@ -73,15 +79,15 @@ def get_next_token_number():
         return 1 if max_no is None else int(max_no) + 1
 
 
-def save_token(name, phone):
+def save_token(name, phone, created_by=""):
     """Insert a new token — DB assigns the token_no atomically via AUTOINCREMENT.
     Returns (token_no, timestamp) so the caller knows the assigned number.
     Safe for concurrent requests: no race condition possible."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with _db_conn() as conn:
         cursor = conn.execute(
-            "INSERT INTO tokens (name, phone, timestamp) VALUES (?, ?, ?)",
-            (name, phone, timestamp),
+            "INSERT INTO tokens (name, phone, timestamp, created_by) VALUES (?, ?, ?, ?)",
+            (name, phone, timestamp, created_by),
         )
         token_no = cursor.lastrowid   # DB-assigned, guaranteed unique
         conn.commit()
@@ -92,12 +98,13 @@ def lookup_token(token_no):
     """Return a record dict for the given token number, or None if not found."""
     with _db_conn() as conn:
         row = conn.execute(
-            "SELECT token_no, name, phone, timestamp FROM tokens WHERE token_no = ?",
+            "SELECT token_no, name, phone, timestamp, created_by FROM tokens WHERE token_no = ?",
             (int(token_no),),
         ).fetchone()
     if row:
         return {"token": str(row["token_no"]), "name": row["name"],
-                "phone": row["phone"], "timestamp": row["timestamp"]}
+                "phone": row["phone"], "timestamp": row["timestamp"],
+                "created_by": row["created_by"] or ""}
     return None
 
 

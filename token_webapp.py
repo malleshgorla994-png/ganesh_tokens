@@ -50,8 +50,8 @@ def submit():
         ), 400
 
     with _submit_lock:
-        token_no, timestamp = jj.save_token(name, phone)   # DB assigns token_no atomically
-        # Try to also save image to disk (works locally; silently skipped on cloud)
+        created_by = request.form.get("created_by", "").strip()
+        token_no, timestamp = jj.save_token(name, phone, created_by)
         try:
             image_path = os.path.join(jj.SAVE_DIR, f"receipt_{token_no}.png")
             jj.build_receipt_image(token_no, name, phone, timestamp, image_path)
@@ -84,10 +84,11 @@ def admin():
         with sqlite3.connect(jj.DB_FILE) as conn:
             conn.row_factory = sqlite3.Row
             rows = conn.execute(
-                "SELECT token_no, name, phone, timestamp FROM tokens ORDER BY token_no"
+                "SELECT token_no, name, phone, timestamp, created_by FROM tokens ORDER BY token_no"
             ).fetchall()
             tokens = [{"token": str(r["token_no"]), "name": r["name"],
-                       "phone": r["phone"], "timestamp": r["timestamp"]} for r in rows]
+                       "phone": r["phone"], "timestamp": r["timestamp"],
+                       "created_by": r["created_by"] or ""} for r in rows]
     except Exception:
         pass
     next_token = jj.get_next_token_number()

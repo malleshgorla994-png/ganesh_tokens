@@ -89,6 +89,7 @@
                         <th>Name</th>
                         <th>Phone</th>
                         <th>Date / Time</th>
+                        <th>Created By</th>
                         <th>Action</th>
                     </tr>
                 </thead>
@@ -99,6 +100,7 @@
                         <td>{{ t.name }}</td>
                         <td>{{ t.phone }}</td>
                         <td>{{ t.timestamp }}</td>
+                        <td>{{ t.created_by or '—' }}</td>
                         <td>
                             <form method="POST" action="/admin/delete/{{ t.token }}" onsubmit="return confirm('Delete token #{{ t.token }} for {{ t.name }}?')">
                                 <button class="del-btn" type="submit">🗑 Delete</button>

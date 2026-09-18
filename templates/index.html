@@ -22,6 +22,10 @@
         <label for="phone">Phone number</label>
         <input id="phone" name="phone" type="tel" autocomplete="tel" placeholder="10-digit mobile number" inputmode="numeric" value="{{ phone or '' }}">
       </div>
+      <div class="field">
+        <label for="created_by">Token Created By <span style="font-weight:400;color:#999">(volunteer/operator name)</span></label>
+        <input id="created_by" name="created_by" type="text" placeholder="Who is registering this person?" value="{{ created_by or '' }}">
+      </div>
       <button class="primary" type="submit">Get my token</button>
     </form>
   </div>
