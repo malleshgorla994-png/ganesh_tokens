@@ -76,6 +76,26 @@ def receipt(token_no):
     )
 
 
+@app.route("/admin")
+def admin():
+    """Admin page — shows all registered tokens from the database."""
+    import sqlite3
+    tokens = []
+    try:
+        with sqlite3.connect(jj.DB_FILE) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT token_no, name, phone, timestamp FROM tokens ORDER BY token_no"
+            ).fetchall()
+            tokens = [{"token": str(r["token_no"]), "name": r["name"],
+                       "phone": r["phone"], "timestamp": r["timestamp"]} for r in rows]
+    except Exception:
+        pass
+    next_token = jj.get_next_token_number()
+    return render_template("admin.html", tokens=tokens, org_name=ORG_NAME, next_token=next_token)
+
+
+
 @app.route("/receipt-image/<int:token_no>.png")
 def receipt_image(token_no):
     record = jj.lookup_token(token_no)
