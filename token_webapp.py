@@ -78,19 +78,7 @@ def receipt(token_no):
 @app.route("/admin")
 def admin():
     """Admin page — shows all registered tokens from the database."""
-    import sqlite3
-    tokens = []
-    try:
-        with sqlite3.connect(jj.DB_FILE) as conn:
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
-                "SELECT token_no, name, phone, timestamp, created_by FROM tokens ORDER BY token_no"
-            ).fetchall()
-            tokens = [{"token": str(r["token_no"]), "name": r["name"],
-                       "phone": r["phone"], "timestamp": r["timestamp"],
-                       "created_by": r["created_by"] or ""} for r in rows]
-    except Exception:
-        pass
+    tokens = jj.get_all_tokens()
     next_token = jj.get_next_token_number()
     return render_template("admin.html", tokens=tokens, org_name=ORG_NAME, next_token=next_token)
 
@@ -98,9 +86,7 @@ def admin():
 @app.route("/admin/delete/<int:token_no>", methods=["POST"])
 def delete_token(token_no):
     """Delete a single token record from the database."""
-    with jj._db_conn() as conn:
-        conn.execute("DELETE FROM tokens WHERE token_no = ?", (token_no,))
-        conn.commit()
+    jj.delete_token_by_no(token_no)
     return redirect(url_for("admin"))
 
 

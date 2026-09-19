@@ -38,74 +38,173 @@ DEFAULT_LOGO_B64 = "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAUDBAQEAwUEBAQFBQUGBwwIBwcH
 
 
 # ---------------------------------------------------------------------------
-# Database helpers  (SQLite — no extra package needed, built into Python)
+# Database — auto-selects PostgreSQL (cloud) or SQLite (local)
+# Set DATABASE_URL env var on Render to point to your free PostgreSQL DB.
 # ---------------------------------------------------------------------------
 
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+
+def _pg():
+    """Return a psycopg2 connection to PostgreSQL."""
+    import psycopg2
+    import psycopg2.extras
+    return psycopg2.connect(DATABASE_URL)
+
+
 def _db_conn():
-    """Open a connection to the SQLite database with row-factory enabled."""
+    """SQLite connection (local use only)."""
     conn = sqlite3.connect(DB_FILE)
     conn.row_factory = sqlite3.Row
     return conn
 
 
 def init_db():
-    """Create the tokens table if it doesn't exist yet. Call once at startup.
-    Uses AUTOINCREMENT so the DB assigns token numbers atomically — safe for
-    concurrent requests even across multiple server processes.
-    """
-    with _db_conn() as conn:
-        conn.execute("""
+    """Create the tokens table. Runs once at startup.
+    PostgreSQL when DATABASE_URL is set, SQLite otherwise."""
+    if DATABASE_URL:
+        conn = _pg()
+        cur = conn.cursor()
+        cur.execute("""
             CREATE TABLE IF NOT EXISTS tokens (
-                token_no    INTEGER PRIMARY KEY AUTOINCREMENT,
-                name        TEXT    NOT NULL,
-                phone       TEXT    NOT NULL,
-                timestamp   TEXT    NOT NULL,
-                created_by  TEXT    NOT NULL DEFAULT ''
+                token_no   SERIAL PRIMARY KEY,
+                name       TEXT NOT NULL,
+                phone      TEXT NOT NULL,
+                timestamp  TEXT NOT NULL,
+                created_by TEXT NOT NULL DEFAULT ''
             )
         """)
-        # Migrate existing DBs that don't have the created_by column yet
+        # Migrate: add created_by if missing
         try:
-            conn.execute("ALTER TABLE tokens ADD COLUMN created_by TEXT NOT NULL DEFAULT ''")
+            cur.execute("ALTER TABLE tokens ADD COLUMN IF NOT EXISTS created_by TEXT NOT NULL DEFAULT ''")
         except Exception:
-            pass  # column already exists — that's fine
+            conn.rollback()
         conn.commit()
+        cur.close()
+        conn.close()
+    else:
+        with _db_conn() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS tokens (
+                    token_no    INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name        TEXT NOT NULL,
+                    phone       TEXT NOT NULL,
+                    timestamp   TEXT NOT NULL,
+                    created_by  TEXT NOT NULL DEFAULT ''
+                )
+            """)
+            try:
+                conn.execute("ALTER TABLE tokens ADD COLUMN created_by TEXT NOT NULL DEFAULT ''")
+            except Exception:
+                pass
+            conn.commit()
 
 
 def get_next_token_number():
     """Returns what the next token number will be (for display only)."""
-    with _db_conn() as conn:
-        row = conn.execute("SELECT MAX(token_no) FROM tokens").fetchone()
-        max_no = row[0]
-        return 1 if max_no is None else int(max_no) + 1
+    if DATABASE_URL:
+        conn = _pg()
+        cur = conn.cursor()
+        cur.execute("SELECT MAX(token_no) FROM tokens")
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        return 1 if row[0] is None else int(row[0]) + 1
+    else:
+        with _db_conn() as conn:
+            row = conn.execute("SELECT MAX(token_no) FROM tokens").fetchone()
+            return 1 if row[0] is None else int(row[0]) + 1
 
 
 def save_token(name, phone, created_by=""):
-    """Insert a new token — DB assigns the token_no atomically via AUTOINCREMENT.
-    Returns (token_no, timestamp) so the caller knows the assigned number.
-    Safe for concurrent requests: no race condition possible."""
+    """Insert a new token — DB assigns token_no atomically.
+    Returns (token_no, timestamp)."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with _db_conn() as conn:
-        cursor = conn.execute(
-            "INSERT INTO tokens (name, phone, timestamp, created_by) VALUES (?, ?, ?, ?)",
-            (name, phone, timestamp, created_by),
+    if DATABASE_URL:
+        conn = _pg()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO tokens (name, phone, timestamp, created_by) VALUES (%s, %s, %s, %s) RETURNING token_no",
+            (name, phone, timestamp, created_by)
         )
-        token_no = cursor.lastrowid   # DB-assigned, guaranteed unique
+        token_no = cur.fetchone()[0]
         conn.commit()
+        cur.close()
+        conn.close()
+    else:
+        with _db_conn() as conn:
+            cursor = conn.execute(
+                "INSERT INTO tokens (name, phone, timestamp, created_by) VALUES (?, ?, ?, ?)",
+                (name, phone, timestamp, created_by)
+            )
+            token_no = cursor.lastrowid
+            conn.commit()
     return token_no, timestamp
 
 
 def lookup_token(token_no):
-    """Return a record dict for the given token number, or None if not found."""
-    with _db_conn() as conn:
-        row = conn.execute(
-            "SELECT token_no, name, phone, timestamp, created_by FROM tokens WHERE token_no = ?",
-            (int(token_no),),
-        ).fetchone()
-    if row:
-        return {"token": str(row["token_no"]), "name": row["name"],
-                "phone": row["phone"], "timestamp": row["timestamp"],
-                "created_by": row["created_by"] or ""}
+    """Return a record dict for the given token number, or None."""
+    if DATABASE_URL:
+        conn = _pg()
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT token_no, name, phone, timestamp, created_by FROM tokens WHERE token_no = %s",
+            (int(token_no),)
+        )
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+        if row:
+            return {"token": str(row[0]), "name": row[1], "phone": row[2],
+                    "timestamp": row[3], "created_by": row[4] or ""}
+    else:
+        with _db_conn() as conn:
+            row = conn.execute(
+                "SELECT token_no, name, phone, timestamp, created_by FROM tokens WHERE token_no = ?",
+                (int(token_no),)
+            ).fetchone()
+            if row:
+                return {"token": str(row["token_no"]), "name": row["name"],
+                        "phone": row["phone"], "timestamp": row["timestamp"],
+                        "created_by": row["created_by"] or ""}
     return None
+
+
+def get_all_tokens():
+    """Return all token records ordered by token_no."""
+    if DATABASE_URL:
+        conn = _pg()
+        cur = conn.cursor()
+        cur.execute("SELECT token_no, name, phone, timestamp, created_by FROM tokens ORDER BY token_no")
+        rows = cur.fetchall()
+        cur.close()
+        conn.close()
+        return [{"token": str(r[0]), "name": r[1], "phone": r[2],
+                 "timestamp": r[3], "created_by": r[4] or ""} for r in rows]
+    else:
+        with _db_conn() as conn:
+            rows = conn.execute(
+                "SELECT token_no, name, phone, timestamp, created_by FROM tokens ORDER BY token_no"
+            ).fetchall()
+            return [{"token": str(r["token_no"]), "name": r["name"],
+                     "phone": r["phone"], "timestamp": r["timestamp"],
+                     "created_by": r["created_by"] or ""} for r in rows]
+
+
+def delete_token_by_no(token_no):
+    """Delete a single token by its number."""
+    if DATABASE_URL:
+        conn = _pg()
+        cur = conn.cursor()
+        cur.execute("DELETE FROM tokens WHERE token_no = %s", (int(token_no),))
+        conn.commit()
+        cur.close()
+        conn.close()
+    else:
+        with _db_conn() as conn:
+            conn.execute("DELETE FROM tokens WHERE token_no = ?", (int(token_no),))
+            conn.commit()
+
 
 
 def get_font(bold=False, italic=False, size=16):
